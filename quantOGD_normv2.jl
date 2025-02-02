@@ -30,9 +30,15 @@ end
 
 function step!(q::quantOGD, i::Int)
     if haskey(q.cache.forward, i)
-        q.adjstepsize = min(q.ONE - q.cache.forward[i] + q.lazyupdate, q.stepsize)
-        add!(q.cache, i, q.adjstepsize)
-        q.overhead += q.adjstepsize
+        if q.cache.forward[i]>q.lazyupdate
+            q.adjstepsize = min(q.ONE - q.cache.forward[i] + q.lazyupdate, q.stepsize)
+            add!(q.cache, i, q.adjstepsize) # the add still does removals
+            q.overhead += q.adjstepsize
+        else
+            q.nonzeros += 1
+            add!(q.cache, i, q.lazyupdate + q.stepsize - q.cache.forward[i])
+            q.overhead += q.stepsize
+        end
     else
         q.nonzeros += 1
         add!(q.cache, i, q.lazyupdate + q.stepsize)
@@ -41,23 +47,12 @@ function step!(q::quantOGD, i::Int)
     clean_cache!(q)             
 end
 
-# here can come in some logic to combine multiple steps
-# the idea is to figure out how much overhead would
-# disappear by planning, amortized constant time 
-# follows from that only constant amount should 
-# become zero 
-
-# you can also avoid removing the indexes in the cache
-# only the update to nonzeros matters
 
 function clean_cache!(q::quantOGD)
     if q.overhead >= q.nonzeros
         q.lazyupdate += 1
         q.overhead -= q.nonzeros
-        for i in sort(get_indexes(q.cache, q.lazyupdate))
-            remove!(q.cache,i)     
-            q.nonzeros -=1
-        end
+        q.nonzeros -= length(get_indexes(q.cache, q.lazyupdate))
         clean_cache!(q)
     end
 end
@@ -94,11 +89,12 @@ end
 
 # Demonstrate the step! function
 function test_time()
-    T = 10^7
+
+    T = 10^6
     N = 10^4
     C = div(N,20)
     alpha = 1.0
-    overhead_cache_rate = 0.001
+    overhead_cache_rate = 0.01
     ONE = Int(ceil(1/overhead_cache_rate)*div(N,C))
     stepsize_real = sqrt( C*(1- C/N)/T)
 
@@ -114,7 +110,7 @@ function test_time()
         end
     end
 end
-test_time()
+# test_time()
 
 function profile()
 
