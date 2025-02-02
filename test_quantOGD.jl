@@ -4,9 +4,13 @@ include("zipf.jl")
 
 
 T = 10^5
-N = 10^4
+N = 10^3
 C = div(N,20)
+overhead_cache_rate = 0.01
+ONE = Int(ceil(1/overhead_cache_rate)*div(N,C))
 stepsize_real = sqrt( C*(1- C/N)/T)
+stepsize = floor(stepsize_real*ONE)
+# println(stepsize)
 
 zipf = ZipfSampler(0.8, N)
 zipf_trace = [ sample(zipf) for _ in 1:T ]
@@ -14,7 +18,7 @@ zipf_trace = [ sample(zipf) for _ in 1:T ]
 
 # histogram([x for x in zipf_trace if x<1000])
 
-q = init_quantOGD(N=N, C=C, ONE = 10000, stepsize_real=stepsize_real)
+q = init_quantOGD(N=N, C=C, ONE = ONE, stepsize_real=stepsize_real)
 
 println(get_fraction(q,1))
 println(q.stepsize)

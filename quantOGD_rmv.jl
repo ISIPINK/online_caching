@@ -37,21 +37,24 @@ function step!(q::quantOGD, i::Int)
         add!(q.cache, i, q.lazyupdate + q.stepsize)
         q.overhead += q.stepsize
     end
-
-    if q.overhead >= q.nonzeros 
-        clean_cache!(q)             
-    end
+    clean_cache!(q)             
 end
 
+# here can come in some logic to combine multiple steps
+# the idea is to figure out how much overhead would
+# disappear by planning, amortized constant time 
+# follows from that only constant amount should 
+# become zero 
+
 function clean_cache!(q::quantOGD)
-    q.lazyupdate += 1
-    q.overhead -= q.nonzeros
-    for i in sort(get_indexes(q.cache, q.lazyupdate))
-        remove!(q.cache,i)     
-        q.nonzeros -=1
-    end
-    if q.overhead >= q.nonzeros 
-        clean_cache!(q)             
+    if q.overhead >= q.nonzeros
+        q.lazyupdate += 1
+        q.overhead -= q.nonzeros
+        for i in sort(get_indexes(q.cache, q.lazyupdate))
+            remove!(q.cache,i)     
+            q.nonzeros -=1
+        end
+        clean_cache!(q)
     end
 end
 
