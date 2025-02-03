@@ -42,7 +42,10 @@ function step!(q::quant_OGD_integral, i::Int)
     end
     q.d = q.counter[i] > q.uniforms[i] ? q.counter[i] - q.uniforms[i] : 0
     q.dlook[q.d] = push!(get(q.dlook, q.d, Set()), i)
-    q.lazy_update <= q.d && push!(q.cache, i)
+    if q.lazy_update <= q.d
+        push!(q.cache, i)
+        (i in q.to_evict) && delete!(q.to_evict, i) 
+    end
     resize_cache!(q)
 end
 
