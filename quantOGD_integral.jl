@@ -14,6 +14,7 @@ mutable struct quant_OGD_integral{T<:Integer}
     uniforms::Dict{T,T}
     dlook::Dict{T,Set{T}}
     cache::Set{T}
+    to_evict::Set{T}
 end
 
 function Base.show(io::IO, q::quant_OGD_integral)
@@ -26,6 +27,7 @@ function Base.show(io::IO, q::quant_OGD_integral)
     println(io, "counter:      ", q.counter)
     println(io, "dlook:      ", q.dlook)
     println(io, "cache:      ", q.cache)
+    println(io, "cache:      ", q.to_evict)
     println(io, "-------------------------")
 end
 
@@ -46,9 +48,14 @@ end
 
 
 function resize_cache!(q::quant_OGD_integral)
-    if length(q.cache) > q.C_UPPER #|| q.overhead >= q.nonzeros  
-        q.lazy_update += 1
-        setdiff!(q.cache, get(q.dlook, q.lazy_update, Set()))
+    if length(q.cache) > q.C_UPPER 
+        if !isempty(q.to_evict)
+            delete!(q.cache, first(q.to_evict))
+            delete!(q.to_evict, first(q.to_evict))
+        else
+            q.lazy_update += 1
+            union!(q.to_evict, get(q.dlook, q.lazy_update, Set()))
+        end
         resize_cache!(q)
     end
 end
@@ -75,13 +82,14 @@ function init_quant_OGD_integral(;
     uniforms = Dict(i => rand(1:ONE) for i in 1:N)
     dlook = Dict{Typ,Set{Typ}}()
     cache = Set{Typ}()
+    to_evict = Set{Typ}()
     # sizehint!(cache, C_UPPER + 1)
     for i in 1:length(counter)
         d = counter[i] > uniforms[i] ? counter[i] - uniforms[i] : 0
         dlook[d] = push!(get(dlook, d, Set{Typ}()), i)
         lazy_update <= d && push!(cache, i)
     end
-    q = quant_OGD_integral{Typ}(ONE, C_UPPER, lazy_update, step_size, d, counter, uniforms, dlook, cache)
+    q = quant_OGD_integral{Typ}(ONE, C_UPPER, lazy_update, step_size, d, counter, uniforms, dlook, cache, to_evict)
     resize_cache!(q)
     return q
 end
