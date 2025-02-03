@@ -114,7 +114,7 @@ function test_time()
         end
     end
 end
-test_time()
+# test_time()
 
 function profile()
 
