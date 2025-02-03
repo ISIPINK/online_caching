@@ -3,7 +3,7 @@ using PProf
 using Plots
 include("zipf.jl")
 
-mutable struct quant_OGD_normv{T <: Integer}
+mutable struct quant_OGD{T <: Integer}
     ONE::T
     overhead::T
     lazy_update::T
@@ -14,7 +14,7 @@ mutable struct quant_OGD_normv{T <: Integer}
     counter_val::Dict{T, T}
 end
  
-function Base.show(io::IO, q::quant_OGD_normv)
+function Base.show(io::IO, q::quant_OGD)
     println(io, "QuantOGD Parameters:")
     println(io, "-------------------------")
     println(io, "ONE:      ", q.ONE)
@@ -28,7 +28,7 @@ function Base.show(io::IO, q::quant_OGD_normv)
 end
 
 
-function step!(q::quant_OGD_normv, i::Int)
+function step!(q::quant_OGD, i::Int)
     q.counter_val[q.counter[i]] -= 1
     if q.counter[i] > q.lazy_update
         q.adj_step_size = min(q.ONE - q.counter[i] + q.lazy_update, q.step_size)
@@ -44,7 +44,7 @@ function step!(q::quant_OGD_normv, i::Int)
 end
 
 
-function resize_cache!(q::quant_OGD_normv)
+function resize_cache!(q::quant_OGD)
     if q.overhead >= q.nonzeros
         q.lazy_update += 1
         q.overhead -= q.nonzeros
@@ -54,11 +54,11 @@ function resize_cache!(q::quant_OGD_normv)
 end
 
 
-get_fraction(q::quant_OGD_normv, i) = q.counter[i] > q.lazy_update ? (q.counter[i] - q.lazy_update) / q.ONE : 0
+get_fraction(q::quant_OGD, i) = q.counter[i] > q.lazy_update ? (q.counter[i] - q.lazy_update) / q.ONE : 0
 
 
 # Constructor for quantOGD
-function init_quant_OGD_normv(;
+function init_quant_OGD(;
     N = 100,
     C = 10,
     overhead_cache_rate = 0.01,
@@ -69,37 +69,37 @@ function init_quant_OGD_normv(;
     nonzeros = N
     adjstepsize = 0
     lazyupdate = 0
-    a = min(div(ONE*C,N),ONE)
-    counter = Dict(i => a for i in 1:N)
-    counter_val = Dict(a=>N) 
-    overhead =  N *a-C*ONE
-    return quant_OGD_normv{UInt32}( ONE, overhead, lazyupdate, stepsize,adjstepsize, nonzeros, counter, counter_val)
+    init_count = min(div(ONE*C,N),ONE)
+    counter = Dict(i => init_count for i in 1:N)
+    counter_val = Dict(init_count=>N) 
+    overhead =  N *init_count-C*ONE
+    return quant_OGD{UInt32}( ONE, overhead, lazyupdate, stepsize,adjstepsize, nonzeros, counter, counter_val)
 end
 
-function test_init_quant_OGD_normv()
+function test_init_quant_OGD()
     T = 10^3
     N = 10^2
     C = div(N,20)
     overhead_cache_rate = 0.01
     stepsize_real = sqrt( C*(1- C/N)/T)
-    q = init_quant_OGD_normv(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real)
+    q = init_quant_OGD(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real)
     println(q)
 end
-test_init_quant_OGD_normv()
+test_init_quant_OGD()
 
-function zipf_setup_normv(;T=10^5,N=10^4, overhead_cache_rate=0.03, alpha=1.0)
+function zipf_setup(;T=10^5,N=10^4, overhead_cache_rate=0.03, alpha=1.0)
     C = div(N,20)
 
     zipf = ZipfSampler(alpha, N)
     zipf_trace = [ sample(zipf) for _ in 1:T ]
 
     stepsize_real = sqrt( C*(1- C/N)/T)
-    q = init_quant_OGD_normv(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real)
+    q = init_quant_OGD(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real)
     return q , zipf_trace
 end
 
 function test_time(;T=10^5,N=10^4,overhead_cache_rate=0.03,alpha=1.00)
-    q, zipf_trace = zipf_setup_normv(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
+    q, zipf_trace = zipf_setup(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
     @time begin 
         for j in zipf_trace
             step!(q, j)
@@ -110,7 +110,7 @@ end
 # test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
 
 function profile(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0)
-    q, zipf_trace = zipf_setup_normv(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
+    q, zipf_trace = zipf_setup(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
     Profile.clear()
     @pprof begin 
         for j in zipf_trace
@@ -123,7 +123,7 @@ end
 
 
 function zipf_hitrate_plt(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0, window = 1000)
-    q, zipf_trace = zipf_setup_normv(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
+    q, zipf_trace = zipf_setup(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
     C = div(N, 20)
     hit = 0.0
     hits = zeros(Float32, length(zipf_trace))
