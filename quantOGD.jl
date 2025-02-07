@@ -1,3 +1,5 @@
+using Random
+using Distributions
 using Profile
 using PProf
 using Plots
@@ -76,17 +78,6 @@ function init_quant_OGD(;
     return quant_OGD{UInt32}( ONE, overhead, lazyupdate, stepsize,adjstepsize, nonzeros, counter, counter_val)
 end
 
-function test_init_quant_OGD()
-    T = 10^3
-    N = 10^2
-    C = div(N,20)
-    overhead_cache_rate = 0.01
-    stepsize_real = sqrt( C*(1- C/N)/T)
-    q = init_quant_OGD(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real)
-    println(q)
-end
-test_init_quant_OGD()
-
 function zipf_setup(;T=10^5,N=10^4, overhead_cache_rate=0.03, alpha=1.0)
     C = div(N,20)
 
@@ -107,7 +98,6 @@ function test_time(;T=10^5,N=10^4,overhead_cache_rate=0.03,alpha=1.00)
     end
     # println(q)
 end
-# test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
 
 function profile(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0)
     q, zipf_trace = zipf_setup(T=T,N=N,overhead_cache_rate=overhead_cache_rate, alpha=alpha)
@@ -119,7 +109,6 @@ function profile(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0)
     end
     pprof()
 end
-# profile(T = 10^7,N=10^4)
 
 
 function zipf_hitrate_plt(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0, window = 1000)
@@ -175,4 +164,81 @@ function zipf_hitrate_plt(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0, wi
 end
 
 
-zipf_hitrate_plt(T=10^6, N= 10^4, overhead_cache_rate = 0.01, alpha = 0.9)
+using Random
+function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, window=1000, Typ=Typ)
+    q, zipf_trace = zipf_setup(T=T, N=N, overhead_cache_rate=overhead_cache_rate, alpha=alpha)
+
+    tmp = collect(1:1000)
+    l = [] 
+    for _ in 1:1000
+        append!(l,shuffle(tmp))
+    end
+    l = [ Int(x) for x in l]
+
+    # Print the counts of each number in 'l'
+    counts = Dict{Int, Int}()
+    for x in l
+        counts[x] = get(counts, x, 0) + 1
+    end
+
+    # Print the counts in a sorted order (by number)
+    for num in sort(collect(keys(counts)))
+        println("$num: $(counts[num])")
+    end
+
+    N = length(l)
+    println(N)
+
+    C = div(N, 20)
+    hit = 0.0
+    hits = zeros(Float32, length(l))
+    cachesizes = zeros(Float32, length(l))
+
+    for i in 1:length(l)
+        j = l[i]
+        hit += get_fraction(q,j) 
+        hits[i] = hit
+        cachesizes[i] = C+q.overhead/q.ONE 
+        step!(q, j)
+    end
+    ss = div(length(hits), 10^2)  # this for subsampling  
+    # Compute the moving maximum over the cachesizes array using the specified window.
+    # mov_max = [maximum(cachesizes[max(1, i - window + 1):i]) for i in 1:length(cachesizes)]
+
+    # First plot: moving maximum of the cache sizes.
+    p1 = plot(cachesizes[1:ss:end],
+        label="Cache Size",
+        color=:blue,
+        xlabel="time/$ss",
+        ylabel="cache size",
+        title="subsampled cachesize ")
+    hline!(p1, [C + N / q.ONE],
+        label="C_UPPER",
+        color=:red,
+        linestyle=:dash)
+
+    # Calculate opt (static optimal hitrate)
+    opt = C/N 
+    # Generate the decay curve: cumulative hitrate over time.
+    decay_curve = hits ./ (1:length(l))
+
+    # Second plot: hitrate decay curve.
+    p2 = plot(decay_curve[1:ss:end],
+        label="quantOGD",
+        color=:green,
+        xlabel="time/$ss",
+        ylabel="hitrate",
+        title="Hitrate on adv trace")
+    hline!(p2, [opt],
+        label="static_opt_hind",
+        color=:red,
+        linestyle=:dash)
+
+    # Stack the two plots vertically.
+    p = plot(p1, p2, layout=(2, 1), size=(600, 800))
+    display(p)
+end
+# profile(T = 10^7,N=10^4)
+# test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
+zipf_hitrate_plt(T=10^7, N= 10^4, overhead_cache_rate = 0.01, alpha = 0.9)
+adv_hitrate_plt(T=10^6, N=10^3, overhead_cache_rate=0.01, alpha=0.8, Typ=UInt32)
