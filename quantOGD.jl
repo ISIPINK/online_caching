@@ -43,7 +43,6 @@ function step!(q::quant_OGD, i::Int)
     end
     q.counter_val[q.counter[i]] = get(q.counter_val, q.counter[i], 0) + 1 #alloc
     resize_cache!(q)             
-    # reset_lazy_update!(q)
 end
 
 
@@ -53,23 +52,6 @@ function resize_cache!(q::quant_OGD)
         q.overhead -= q.nonzeros
         q.nonzeros -= get(q.counter_val, q.lazy_update, 0) 
     end
-end
-
-function reset_lazy_update!(q::quant_OGD)
-    println(q)
-    if 255 == q.lazy_update + q.ONE 
-        for (key,_) in q.counter
-            q.counter_val[q.counter[key]] -= 1
-            if q.counter[key] >= q.lazy_update
-                q.counter[key] -= q.lazy_update
-            else
-                q.counter[key] = 0 
-            end
-        q.counter_val[q.counter[key]] = get(q.counter_val, q.counter[key], 0) + 1 #alloc
-        end
-        q.lazy_update = 0
-    end
-    println(q)
 end
 
 
@@ -85,7 +67,7 @@ function init_quant_OGD(;
     Typ_count = UInt32
     )
     ONE = Int(ceil(1/overhead_cache_rate)*div(N,C))
-    stepsize = floor(stepsize_real*ONE)
+    stepsize = max(floor(stepsize_real*ONE),1)
     nonzeros = N
     adjstepsize = 0
     lazyupdate = 0
@@ -135,6 +117,8 @@ function zipf_hitrate_plt(;T=10^5,N=10^4,overhead_cache_rate=0.03, alpha=1.0, wi
     hit = 0.0
     hits = zeros(Float32, length(zipf_trace))
     cachesizes = zeros(Float32, length(zipf_trace))
+    println("ONE:",q.ONE)
+    println("step_size:",q.step_size)
 
     for i in 1:length(zipf_trace)
         j = zipf_trace[i]
@@ -186,13 +170,18 @@ using Random
 function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, window=1000, Typ_count=UInt32)
 
     tmp = collect(1:1000)
+    tmp1 = collect(1001:2000)
     l = [] 
-    for _ in 1:1000
+    for _ in 1:500
         append!(l,shuffle(tmp))
+    end
+
+    for _ in 1:500
+        append!(l,shuffle(tmp1))
     end
     l = [ Int(x) for x in l]
 
-    N = length(tmp)
+    N = length(tmp)+ length(tmp1)
     T = length(l)
 
     C = div(N, 20)
@@ -202,6 +191,7 @@ function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, 
 
     q, zipf_trace = zipf_setup(T=T, N=N, overhead_cache_rate=overhead_cache_rate, alpha=alpha,Typ_count=Typ_count)
     println("ONE:",q.ONE)
+    println("step:",q.step_size)
     for i in 1:length(l)
         j = l[i]
         hit += get_fraction(q,j) 
@@ -247,6 +237,6 @@ function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, 
     display(p)
 end
 # profile(T = 10^6,N=10^4,overhead_cache_rate=0.0001)
-test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
+# test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
 # zipf_hitrate_plt(T=10^7, N= 10^4, overhead_cache_rate = 0.01, alpha = 0.9)
 adv_hitrate_plt(T=10^6, N=10^3, overhead_cache_rate=0.01, alpha=0.8, Typ_count=UInt16)
