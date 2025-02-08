@@ -5,15 +5,15 @@ using PProf
 using Plots
 include("zipf.jl")
 
-mutable struct quant_OGD{T <: Integer}
-    ONE::T
-    overhead::T
-    lazy_update::T
-    step_size::T
-    adj_step_size::T
-    nonzeros::T
-    counter::Dict{T, T}
-    counter_val::Dict{T, T}
+mutable struct quant_OGD{Typ_count <: Integer, Typ_ind<:Integer}
+    ONE::Typ_count
+    overhead::Typ_count
+    lazy_update::Typ_count
+    step_size::Typ_count
+    adj_step_size::Typ_count
+    nonzeros::Typ_ind
+    counter::Dict{Typ_ind, Typ_count}
+    counter_val::Dict{Typ_count, Typ_ind}
 end
  
 function Base.show(io::IO, q::quant_OGD)
@@ -28,11 +28,11 @@ function Base.show(io::IO, q::quant_OGD)
     println(io, "counter_val:      ", q.counter_val)
     println(io, "-------------------------")
 end
-
+ 
 
 function step!(q::quant_OGD, i::Int)
     q.counter_val[q.counter[i]] -= 1
-    if q.counter[i] > q.lazy_update
+    if q.counter[i] > q.lazy_update # is component nonzero?
         q.adj_step_size = min(q.ONE - q.counter[i] + q.lazy_update, q.step_size)
         q.counter[i] += q.adj_step_size
         q.overhead += q.adj_step_size
@@ -43,16 +43,33 @@ function step!(q::quant_OGD, i::Int)
     end
     q.counter_val[q.counter[i]] = get(q.counter_val, q.counter[i], 0) + 1 #alloc
     resize_cache!(q)             
+    # reset_lazy_update!(q)
 end
 
 
 function resize_cache!(q::quant_OGD)
-    if q.overhead >= q.nonzeros
+    while q.overhead >= q.nonzeros
         q.lazy_update += 1
         q.overhead -= q.nonzeros
         q.nonzeros -= get(q.counter_val, q.lazy_update, 0) 
-        resize_cache!(q)
     end
+end
+
+function reset_lazy_update!(q::quant_OGD)
+    println(q)
+    if 255 == q.lazy_update + q.ONE 
+        for (key,_) in q.counter
+            q.counter_val[q.counter[key]] -= 1
+            if q.counter[key] >= q.lazy_update
+                q.counter[key] -= q.lazy_update
+            else
+                q.counter[key] = 0 
+            end
+        q.counter_val[q.counter[key]] = get(q.counter_val, q.counter[key], 0) + 1 #alloc
+        end
+        q.lazy_update = 0
+    end
+    println(q)
 end
 
 
@@ -65,6 +82,7 @@ function init_quant_OGD(;
     C = 10,
     overhead_cache_rate = 0.01,
     stepsize_real = 0.01,
+    Typ_count = UInt32
     )
     ONE = Int(ceil(1/overhead_cache_rate)*div(N,C))
     stepsize = floor(stepsize_real*ONE)
@@ -75,17 +93,17 @@ function init_quant_OGD(;
     counter = Dict(i => init_count for i in 1:N)
     counter_val = Dict(init_count=>N) 
     overhead =  N *init_count-C*ONE
-    return quant_OGD{UInt32}( ONE, overhead, lazyupdate, stepsize,adjstepsize, nonzeros, counter, counter_val)
+    return quant_OGD{Typ_count,UInt16}( ONE, overhead, lazyupdate, stepsize,adjstepsize, nonzeros, counter, counter_val)
 end
 
-function zipf_setup(;T=10^5,N=10^4, overhead_cache_rate=0.03, alpha=1.0)
+function zipf_setup(;T=10^5,N=10^4, overhead_cache_rate=0.03, alpha=1.0,Typ_count=UInt32)
     C = div(N,20)
 
     zipf = ZipfSampler(alpha, N)
     zipf_trace = [ sample(zipf) for _ in 1:T ]
 
     stepsize_real = sqrt( C*(1- C/N)/T)
-    q = init_quant_OGD(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real)
+    q = init_quant_OGD(N=N, C=C, overhead_cache_rate = overhead_cache_rate, stepsize_real=stepsize_real, Typ_count=Typ_count)
     return q , zipf_trace
 end
 
@@ -165,8 +183,7 @@ end
 
 
 using Random
-function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, window=1000, Typ=Typ)
-    q, zipf_trace = zipf_setup(T=T, N=N, overhead_cache_rate=overhead_cache_rate, alpha=alpha)
+function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, window=1000, Typ_count=UInt32)
 
     tmp = collect(1:1000)
     l = [] 
@@ -175,25 +192,16 @@ function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, 
     end
     l = [ Int(x) for x in l]
 
-    # Print the counts of each number in 'l'
-    counts = Dict{Int, Int}()
-    for x in l
-        counts[x] = get(counts, x, 0) + 1
-    end
-
-    # Print the counts in a sorted order (by number)
-    for num in sort(collect(keys(counts)))
-        println("$num: $(counts[num])")
-    end
-
-    N = length(l)
-    println(N)
+    N = length(tmp)
+    T = length(l)
 
     C = div(N, 20)
     hit = 0.0
     hits = zeros(Float32, length(l))
     cachesizes = zeros(Float32, length(l))
 
+    q, zipf_trace = zipf_setup(T=T, N=N, overhead_cache_rate=overhead_cache_rate, alpha=alpha,Typ_count=Typ_count)
+    println("ONE:",q.ONE)
     for i in 1:length(l)
         j = l[i]
         hit += get_fraction(q,j) 
@@ -201,7 +209,7 @@ function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, 
         cachesizes[i] = C+q.overhead/q.ONE 
         step!(q, j)
     end
-    ss = div(length(hits), 10^2)  # this for subsampling  
+    ss = max(div(length(hits), 10^2),1)  # this for subsampling  
     # Compute the moving maximum over the cachesizes array using the specified window.
     # mov_max = [maximum(cachesizes[max(1, i - window + 1):i]) for i in 1:length(cachesizes)]
 
@@ -238,7 +246,7 @@ function adv_hitrate_plt(; T=10^5, N=10^4, overhead_cache_rate=0.03, alpha=1.0, 
     p = plot(p1, p2, layout=(2, 1), size=(600, 800))
     display(p)
 end
-# profile(T = 10^7,N=10^4)
-# test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
-zipf_hitrate_plt(T=10^7, N= 10^4, overhead_cache_rate = 0.01, alpha = 0.9)
-adv_hitrate_plt(T=10^6, N=10^3, overhead_cache_rate=0.01, alpha=0.8, Typ=UInt32)
+# profile(T = 10^6,N=10^4,overhead_cache_rate=0.0001)
+test_time(T = 10^7, N=10^4, overhead_cache_rate =0.01, alpha=0.6)
+# zipf_hitrate_plt(T=10^7, N= 10^4, overhead_cache_rate = 0.01, alpha = 0.9)
+adv_hitrate_plt(T=10^6, N=10^3, overhead_cache_rate=0.01, alpha=0.8, Typ_count=UInt16)
