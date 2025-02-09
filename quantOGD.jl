@@ -32,7 +32,7 @@ end
 
 function step!(q::quant_OGD, i::Int)
     q.counter_val[q.counter[i]] -= 1
-    if q.counter[i] > q.lazy_update # is component nonzero?
+    if q.counter[i] > q.lazy_update # is component strictly positive?
         q.adj_step_size = min(q.ONE - q.counter[i] + q.lazy_update, q.step_size)
         q.counter[i] += q.adj_step_size
         q.overhead += q.adj_step_size
